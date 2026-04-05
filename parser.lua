@@ -185,7 +185,8 @@ local function preprocessRbxmx(xml)
 						table.insert(result, content)
 					else
 						local needsWrap = false
-						for ci = 1, #content do
+						local contentLen = #content
+						for ci = 1, contentLen do
 							local b = string.byte(content, ci)
 							if b < 9 or (b > 13 and b < 32) or b > 126 then
 								needsWrap = true
@@ -511,10 +512,132 @@ local function getRunContextFromNode(node)
 	end
 end
 
+local function parseXML(xml)
+	local tree = {children = {}}
+	local stack = {tree}
+	local top = stack[#stack]
+	local i = 1
+	while i <= #xml do
+		if xml:sub(i, i) == '<' then
+			i = i + 1
+			if xml:sub(i, i) == '/' then
+				i = i + 1
+				local tagEnd = xml:find(">", i)
+				if not tagEnd then
+					warn("Malformed XML: Unclosed end tag at position " .. i)
+					break
+				end
+				i = tagEnd + 1
+				if #stack > 1 then
+					table.remove(stack)
+					top = stack[#stack]
+				else
+					warn("Malformed XML: Extra closing tag at position " .. i)
+				end
+			elseif xml:sub(i, i) == '?' then
+				local piEnd = xml:find("?>", i)
+				if not piEnd then
+					warn("Malformed XML: Unclosed processing instruction at position " .. i)
+					break
+				end
+				i = piEnd + 2
+			elseif xml:sub(i, i+7) == '![CDATA[' then
+				i = i + 8
+				local cdataEnd = xml:find("]]>", i)
+				if not cdataEnd then
+					warn("Malformed XML: Unclosed CDATA at position " .. i)
+					break
+				end
+				local text = xml:sub(i, cdataEnd - 1)
+				table.insert(top.children, {text = text})
+				i = cdataEnd + 3
+			elseif xml:sub(i, i+2) == '!--' then
+				i = i + 3
+				local commentEnd = xml:find("-->", i)
+				if not commentEnd then
+					warn("Malformed XML: Unclosed comment at position " .. i)
+					break
+				end
+				i = commentEnd + 3
+			else
+				local tagEnd
+				local j = i
+				while j <= #xml do
+					local c = xml:sub(j, j)
+					if c == '"' then
+						j = j + 1
+						while j <= #xml and xml:sub(j, j) ~= '"' do
+							j = j + 1
+						end
+						j = j + 1
+					elseif c == "'" then
+						j = j + 1
+						while j <= #xml and xml:sub(j, j) ~= "'" do
+							j = j + 1
+						end
+						j = j + 1
+					elseif c == '>' then
+						tagEnd = j
+						break
+					elseif string.byte(c) == 0 then
+						tagEnd = nil
+						break
+					else
+						j = j + 1
+					end
+				end
+				if not tagEnd then
+					local nextTag = xml:find("<", i)
+					if not nextTag then break end
+					i = nextTag
+					continue
+				end
+				local tagStr = xml:sub(i, tagEnd - 1)
+				i = tagEnd + 1
+				local tag = tagStr:match("^(%S+)")
+				if not tag then
+					warn("Malformed XML: Invalid tag name at position " .. i)
+					break
+				end
+				local attrs = {}
+				for k, v in tagStr:gmatch('(%S+)=%s*"([^"]*)"') do
+					attrs[k] = v
+				end
+				local new = {tag = tag, attrs = attrs, children = {}}
+				table.insert(top.children, new)
+				if xml:sub(tagEnd - 1, tagEnd - 1) == '/' then
+				else
+					table.insert(stack, new)
+					top = new
+				end
+			end
+		else
+			local textStart = i
+			local textEnd = xml:find("<", i) or (#xml + 1)
+			local text = xml:sub(i, textEnd - 1):gsub("^%s*(.-)%s*$", "%1")
+			text = text:gsub("&amp;", "&")
+				:gsub("&lt;", "<")
+				:gsub("&gt;", ">")
+				:gsub("&quot;", '"')
+				:gsub("&apos;", "'")
+				:gsub("&#(%d+);", function(n) return string.char(tonumber(n)) end)
+				:gsub("&#x(%x+);", function(h) return string.char(tonumber(h, 16)) end)
+			if text ~= "" then
+				table.insert(top.children, {text = text})
+			end
+			i = textEnd
+		end
+	end
+	if #stack > 1 then
+		warn("Malformed XML: Unclosed tags remain")
+	end
+	return tree
+end
+
 local function rbxmxToInstance(xmlString, debug, waitInterval)
 	waitInterval = waitInterval or 10000
-	local tree = preprocessRbxmx(xmlString)
-	waitInterval = 10000
+	local processed = preprocessRbxmx(xmlString)
+	local tree = parseXML(processed)
 	local root = getTagNode("roblox", tree) or tree.children[1]
 	local refs = {}
 	local scripts = {}
