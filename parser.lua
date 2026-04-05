@@ -124,10 +124,37 @@ local function parseXML(xml)
 				end
 				i = commentEnd + 3
 			else
-				local tagEnd = xml:find(">", i)
+				local tagEnd
+				local j = i
+				while j <= #xml do
+					local c = xml:sub(j, j)
+					if c == '"' then
+						j = j + 1
+						while j <= #xml and xml:sub(j, j) ~= '"' do
+							j = j + 1
+						end
+						j = j + 1
+					elseif c == "'" then
+						j = j + 1
+						while j <= #xml and xml:sub(j, j) ~= "'" do
+							j = j + 1
+						end
+						j = j + 1
+					elseif c == '>' then
+						tagEnd = j
+						break
+					elseif string.byte(c) == 0 then
+						tagEnd = nil
+						break
+					else
+						j = j + 1
+					end
+				end
 				if not tagEnd then
-					warn("Malformed XML: No closing '>' for tag at position " .. i)
-					break
+					local nextTag = xml:find("<", i)
+					if not nextTag then break end
+					i = nextTag
+					continue
 				end
 				local tagStr = xml:sub(i, tagEnd - 1)
 				i = tagEnd + 1
