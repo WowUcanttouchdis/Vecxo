@@ -184,21 +184,8 @@ local function preprocessRbxmx(xml)
 					if trimmed:sub(1, 9) == "<![CDATA[" then
 						table.insert(result, content)
 					else
-						local needsWrap = false
-						local contentLen = #content
-						for ci = 1, contentLen do
-							local b = string.byte(content, ci)
-							if b < 9 or (b > 13 and b < 32) or b > 126 then
-								needsWrap = true
-								break
-							end
-						end
-						if needsWrap then
-							local escaped = content:gsub("]]>", "]]]]><![CDATA[>")
-							table.insert(result, "<![CDATA[" .. escaped .. "]]>")
-						else
-							table.insert(result, content)
-						end
+						local escaped = content:gsub("]]>", "]]]]><![CDATA[>")
+						table.insert(result, "<![CDATA[" .. escaped .. "]]>")
 					end
 					table.insert(result, closeTag)
 					i = closePos + #closeTag
