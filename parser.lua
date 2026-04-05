@@ -99,38 +99,32 @@ local function preprocessRbxmx(xml)
 		if lt > len then break end
 		local next1 = string.byte(xml, lt + 1)
 		if next1 == 63 then -- '?'
-			local e = lt + 2
-			while e < len do
-				if string.byte(xml, e) == 63 and string.byte(xml, e+1) == 62 then -- '?>'
-					e = e + 2
-					break
-				end
-				e = e + 1
+			local e = xml:find("?>", lt + 2, true)
+			if e then
+				table.insert(result, xml:sub(lt, e + 1))
+				i = e + 2
+			else
+				table.insert(result, xml:sub(lt))
+				i = len + 1
 			end
-			table.insert(result, xml:sub(lt, e - 1))
-			i = e
-		elseif next1 == 33 and string.byte(xml, lt+2) == 45 and string.byte(xml, lt+3) == 45 then -- '!--'
-			local e = lt + 4
-			while e < len do
-				if string.byte(xml, e) == 45 and string.byte(xml, e+1) == 45 and string.byte(xml, e+2) == 62 then -- '-->'
-					e = e + 3
-					break
-				end
-				e = e + 1
+		elseif next1 == 33 and string.byte(xml, lt+2) == 45 and string.byte(xml, lt+3) == 45 then
+			local e = xml:find("-->", lt + 4, true)
+			if e then
+				table.insert(result, xml:sub(lt, e + 2))
+				i = e + 3
+			else
+				table.insert(result, xml:sub(lt))
+				i = len + 1
 			end
-			table.insert(result, xml:sub(lt, e - 1))
-			i = e
 		elseif next1 == 33 and xml:sub(lt+2, lt+8) == "[CDATA[" then
-			local e = lt + 9
-			while e < len do
-				if string.byte(xml, e) == 93 and string.byte(xml, e+1) == 93 and string.byte(xml, e+2) == 62 then -- ']]>'
-					e = e + 3
-					break
-				end
-				e = e + 1
+			local e = xml:find("]]>", lt + 9, true)
+			if e then
+				table.insert(result, xml:sub(lt, e + 2))
+				i = e + 3
+			else
+				table.insert(result, xml:sub(lt))
+				i = len + 1
 			end
-			table.insert(result, xml:sub(lt, e - 1))
-			i = e
 		elseif next1 == 47 then -- '/'
 			local e = lt + 2
 			while e <= len and string.byte(xml, e) ~= 62 do -- '>'
