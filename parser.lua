@@ -173,9 +173,9 @@ local function preprocessRbxmx(xml)
 				local closePos = xml:find(closeTag, i, true)
 				if closePos then
 					local content = xml:sub(contentStart, closePos - 1)
-
-					local trimmed = content:match("^%s*(.-)%s*$") or ""
-					if trimmed:sub(1, 9) == "<![CDATA[" then
+					local cs = 1
+					while cs <= #content and string.byte(content, cs) <= 32 do cs = cs + 1 end
+					if content:sub(cs, cs + 8) == "<![CDATA[" then
 						table.insert(result, content)
 					else
 						local escaped = content:gsub("]]>", "]]]]><![CDATA[>")
