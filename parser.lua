@@ -621,8 +621,11 @@ end
 
 local function rbxmxToInstance(xmlString, debug, waitInterval)
 	waitInterval = waitInterval or 10000
+	waitInterval = waitInterval or 10000
 	local processed = preprocessRbxmx(xmlString)
+	task.wait() -- yield after preprocessing
 	local tree = parseXML(processed)
+	task.wait() -- yield after parsing
 	local root = getTagNode("roblox", tree) or tree.children[1]
 	local refs = {}
 	local scripts = {}
