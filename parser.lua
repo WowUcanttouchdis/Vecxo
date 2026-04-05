@@ -595,7 +595,11 @@ local function parseXML(xml)
 		else
 			local textStart = i
 			local textEnd = xml:find("<", i) or (#xml + 1)
-			local text = xml:sub(i, textEnd - 1):gsub("^%s*(.-)%s*$", "%1")
+			local s = i
+			local e = textEnd - 1
+			while s <= e and string.byte(xml, s) <= 32 do s = s + 1 end
+			while e >= s and string.byte(xml, e) <= 32 do e = e - 1 end
+			local text = xml:sub(s, e)
 			text = text:gsub("&amp;", "&")
 				:gsub("&lt;", "<")
 				:gsub("&gt;", ">")
