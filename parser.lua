@@ -76,126 +76,163 @@ Script = value
 %s
 ]]
 
-local function parseXML(xml)
-	local tree = {children = {}}
-	local stack = {tree}
-	local top = stack[#stack]
+local function preprocessRbxmx(xml)
+	local result = {}
 	local i = 1
-	while i <= #xml do
-		if xml:sub(i, i) == '<' then
-			i = i + 1
-			if xml:sub(i, i) == '/' then
-				i = i + 1
-				local tagEnd = xml:find(">", i)
-				if not tagEnd then
-					warn("Malformed XML: Unclosed end tag at position " .. i)
+	local len = #xml
+
+	local stringTags = {
+		["string"] = true,
+		["ProtectedString"] = true,
+		["BinaryString"] = true,
+		["SharedString"] = true,
+	}
+
+	while i <= len do
+		local lt = i
+		while lt <= len and string.byte(xml, lt) ~= 60 do -- 60 = '<'
+			lt = lt + 1
+		end
+		if lt > i then
+			table.insert(result, xml:sub(i, lt - 1))
+		end
+		if lt > len then break end
+		local next1 = string.byte(xml, lt + 1)
+		if next1 == 63 then -- '?'
+			local e = lt + 2
+			while e < len do
+				if string.byte(xml, e) == 63 and string.byte(xml, e+1) == 62 then -- '?>'
+					e = e + 2
 					break
 				end
-				i = tagEnd + 1
-				if #stack > 1 then
-					table.remove(stack)
-					top = stack[#stack]
-				else
-					warn("Malformed XML: Extra closing tag at position " .. i)
-				end
-			elseif xml:sub(i, i) == '?' then
-				local piEnd = xml:find("?>", i)
-				if not piEnd then
-					warn("Malformed XML: Unclosed processing instruction at position " .. i)
-					break
-				end
-				i = piEnd + 2
-			elseif xml:sub(i, i+7) == '![CDATA[' then
-				i = i + 8
-				local cdataEnd = xml:find("]]>", i)
-				if not cdataEnd then
-					warn("Malformed XML: Unclosed CDATA at position " .. i)
-					break
-				end
-				local text = xml:sub(i, cdataEnd - 1)
-				table.insert(top.children, {text = text})
-				i = cdataEnd + 3
-			elseif xml:sub(i, i+2) == '!--' then
-				i = i + 3
-				local commentEnd = xml:find("-->", i)
-				if not commentEnd then
-					warn("Malformed XML: Unclosed comment at position " .. i)
-					break
-				end
-				i = commentEnd + 3
-			else
-				local tagEnd
-				local j = i
-				while j <= #xml do
-					local c = xml:sub(j, j)
-					if c == '"' then
-						j = j + 1
-						while j <= #xml and xml:sub(j, j) ~= '"' do
-							j = j + 1
-						end
-						j = j + 1
-					elseif c == "'" then
-						j = j + 1
-						while j <= #xml and xml:sub(j, j) ~= "'" do
-							j = j + 1
-						end
-						j = j + 1
-					elseif c == '>' then
-						tagEnd = j
-						break
-					elseif string.byte(c) == 0 then
-						tagEnd = nil
-						break
-					else
-						j = j + 1
-					end
-				end
-				if not tagEnd then
-					local nextTag = xml:find("<", i)
-					if not nextTag then break end
-					i = nextTag
-					continue
-				end
-				local tagStr = xml:sub(i, tagEnd - 1)
-				i = tagEnd + 1
-				local tag = tagStr:match("^(%S+)")
-				if not tag then
-					warn("Malformed XML: Invalid tag name at position " .. i)
-					break
-				end
-				local attrs = {}
-				for k, v in tagStr:gmatch('(%S+)=%s*"([^"]*)"') do
-					attrs[k] = v
-				end
-				local new = {tag = tag, attrs = attrs, children = {}}
-				table.insert(top.children, new)
-				if xml:sub(tagEnd - 1, tagEnd - 1) == '/' then
-				else
-					table.insert(stack, new)
-					top = new
-				end
+				e = e + 1
 			end
+			table.insert(result, xml:sub(lt, e - 1))
+			i = e
+		elseif next1 == 33 and string.byte(xml, lt+2) == 45 and string.byte(xml, lt+3) == 45 then -- '!--'
+			local e = lt + 4
+			while e < len do
+				if string.byte(xml, e) == 45 and string.byte(xml, e+1) == 45 and string.byte(xml, e+2) == 62 then -- '-->'
+					e = e + 3
+					break
+				end
+				e = e + 1
+			end
+			table.insert(result, xml:sub(lt, e - 1))
+			i = e
+		elseif next1 == 33 and xml:sub(lt+2, lt+8) == "[CDATA[" then
+			local e = lt + 9
+			while e < len do
+				if string.byte(xml, e) == 93 and string.byte(xml, e+1) == 93 and string.byte(xml, e+2) == 62 then -- ']]>'
+					e = e + 3
+					break
+				end
+				e = e + 1
+			end
+			table.insert(result, xml:sub(lt, e - 1))
+			i = e
+		elseif next1 == 47 then -- '/'
+			local e = lt + 2
+			while e <= len and string.byte(xml, e) ~= 62 do -- '>'
+				e = e + 1
+			end
+			table.insert(result, xml:sub(lt, e))
+			i = e + 1
 		else
-			local textStart = i
-			local textEnd = xml:find("<", i) or (#xml + 1)
-			local text = xml:sub(i, textEnd - 1):gsub("^%s*(.-)%s*$", "%1")
-			text = text:gsub("&amp;", "&")
-				:gsub("&lt;", "<")
-				:gsub("&gt;", ">")
-				:gsub("&quot;", '"')
-				:gsub("&apos;", "'")
-				:gsub("&#(%d+);", function(n) return string.char(tonumber(n)) end)
-				:gsub("&#x(%x+);", function(h) return string.char(tonumber(h, 16)) end)
-			if text ~= "" then
-				table.insert(top.children, {text = text})
+			local nameStart = lt + 1
+			local nameEnd = nameStart
+			while nameEnd <= len do
+				local b = string.byte(xml, nameEnd)
+				if (b >= 97 and b <= 122) or (b >= 65 and b <= 90) or 
+					(b >= 48 and b <= 57) or b == 95 or b == 58 or b == 45 then
+					nameEnd = nameEnd + 1
+				else
+					break
+				end
 			end
-			i = textEnd
+			local tagName = xml:sub(nameStart, nameEnd - 1)
+			local e = nameEnd
+			while e <= len do
+				local b = string.byte(xml, e)
+				if b == 34 or b == 39 then -- '"' or "'"
+					local q = b
+					e = e + 1
+					while e <= len and string.byte(xml, e) ~= q do
+						e = e + 1
+					end
+					e = e + 1
+				elseif b == 62 then
+					break
+				else
+					e = e + 1
+				end
+			end
+			local selfClosing = string.byte(xml, e - 1) == 47
+			local openTag = xml:sub(lt, e)
+			table.insert(result, openTag)
+			i = e + 1
+			if stringTags[tagName] and not selfClosing then
+				local closeTag = "</" .. tagName .. ">"
+				local closeLen = #closeTag
+				local contentStart = i
+				local found = false
+
+				while i <= len do
+					if string.byte(xml, i) == 60 then
+						local match = true
+						for ci = 1, closeLen do
+							if string.byte(xml, i + ci - 1) ~= string.byte(closeTag, ci) then
+								match = false
+								break
+							end
+						end
+						if match then
+							local content = xml:sub(contentStart, i - 1)
+							local trimmed = content:match("^%s*(.-)%s*$")
+							if trimmed:sub(1, 9) == "<![CDATA[" then
+								table.insert(result, content)
+							else
+								local needsWrap = false
+								for ci = 1, #content do
+									local b = string.byte(content, ci)
+									if b < 9 or (b > 13 and b < 32) or b > 126 then
+										needsWrap = true
+										break
+									end
+								end
+								if needsWrap then
+									local escaped = {}
+									local ci = 1
+									while ci <= #content do
+										if content:sub(ci, ci+2) == "]]>" then
+											table.insert(escaped, "]]]]><![CDATA[>")
+											ci = ci + 3
+										else
+											table.insert(escaped, content:sub(ci, ci))
+											ci = ci + 1
+										end
+									end
+									table.insert(result, "<![CDATA[" .. table.concat(escaped) .. "]]>")
+								else
+									table.insert(result, content)
+								end
+							end
+							table.insert(result, closeTag)
+							i = i + closeLen
+							found = true
+							break
+						end
+					end
+					i = i + 1
+				end
+				if not found then
+					table.insert(result, xml:sub(contentStart))
+					i = len + 1
+				end
+			end
 		end
 	end
-	if #stack > 1 then
-		warn("Malformed XML: Unclosed tags remain")
-	end
-	return tree
+	return table.concat(result)
 end
 
 local function getTagNode(name, node)
@@ -497,7 +534,8 @@ end
 
 local function rbxmxToInstance(xmlString, debug, waitInterval)
 	waitInterval = waitInterval or 10000
-	local tree = parseXML(xmlString)
+	local tree = preprocessRbxmx(xmlString)
+	waitInterval = 10000
 	local root = getTagNode("roblox", tree) or tree.children[1]
 	local refs = {}
 	local scripts = {}
