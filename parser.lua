@@ -173,58 +173,37 @@ local function preprocessRbxmx(xml)
 			i = e + 1
 			if stringTags[tagName] and not selfClosing then
 				local closeTag = "</" .. tagName .. ">"
-				local closeLen = #closeTag
 				local contentStart = i
 				local found = false
 
-				while i <= len do
-					if string.byte(xml, i) == 60 then
-						local match = true
-						for ci = 1, closeLen do
-							if string.byte(xml, i + ci - 1) ~= string.byte(closeTag, ci) then
-								match = false
+				local closePos = xml:find(closeTag, i, true)
+				if closePos then
+					local content = xml:sub(contentStart, closePos - 1)
+
+					local trimmed = content:match("^%s*(.-)%s*$") or ""
+					if trimmed:sub(1, 9) == "<![CDATA[" then
+						table.insert(result, content)
+					else
+						local needsWrap = false
+						for ci = 1, #content do
+							local b = string.byte(content, ci)
+							if b < 9 or (b > 13 and b < 32) or b > 126 then
+								needsWrap = true
 								break
 							end
 						end
-						if match then
-							local content = xml:sub(contentStart, i - 1)
-							local trimmed = content:match("^%s*(.-)%s*$")
-							if trimmed:sub(1, 9) == "<![CDATA[" then
-								table.insert(result, content)
-							else
-								local needsWrap = false
-								for ci = 1, #content do
-									local b = string.byte(content, ci)
-									if b < 9 or (b > 13 and b < 32) or b > 126 then
-										needsWrap = true
-										break
-									end
-								end
-								if needsWrap then
-									local escaped = {}
-									local ci = 1
-									while ci <= #content do
-										if content:sub(ci, ci+2) == "]]>" then
-											table.insert(escaped, "]]]]><![CDATA[>")
-											ci = ci + 3
-										else
-											table.insert(escaped, content:sub(ci, ci))
-											ci = ci + 1
-										end
-									end
-									table.insert(result, "<![CDATA[" .. table.concat(escaped) .. "]]>")
-								else
-									table.insert(result, content)
-								end
-							end
-							table.insert(result, closeTag)
-							i = i + closeLen
-							found = true
-							break
+						if needsWrap then
+							local escaped = content:gsub("]]>", "]]]]><![CDATA[>")
+							table.insert(result, "<![CDATA[" .. escaped .. "]]>")
+						else
+							table.insert(result, content)
 						end
 					end
-					i = i + 1
+					table.insert(result, closeTag)
+					i = closePos + #closeTag
+					found = true
 				end
+
 				if not found then
 					table.insert(result, xml:sub(contentStart))
 					i = len + 1
